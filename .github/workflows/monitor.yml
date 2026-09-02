@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 24
       - run: npm install playwright@1.55.0
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium
       - name: Check loaded sections and send screenshots
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
