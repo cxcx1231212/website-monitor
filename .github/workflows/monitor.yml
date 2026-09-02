@@ -23,6 +23,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: |
           node --input-type=module <<'NODE'
           import { chromium } from 'playwright';
@@ -35,6 +36,7 @@ jobs:
           const nextState = { ...state };
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const chatId = process.env.TELEGRAM_CHAT_ID;
+          const testMode = process.env.TEST_MODE === '1';
           if (!token || !chatId) throw new Error('Telegram secrets are not configured');
 
           const browser = await chromium.launch({ headless: true });
@@ -103,6 +105,7 @@ jobs:
                 return r.width > 300 && r.height > 80 && text.includes('期号') && text.includes('开奖结果');
               }).map((el) => el.id).filter(Boolean));
               console.log('sections ' + ids.length + ':', url);
+              if (testMode && ids.length > 1) ids.splice(1);
 
               const deadline = Date.now() + 30000;
               let pending = [...ids];
@@ -127,7 +130,7 @@ jobs:
                 const hash = createHash('sha256').update(status.text).digest('hex');
                 const previous = state[key];
                 nextState[key] = hash;
-                if (previous && previous !== hash) {
+                if (testMode || (previous && previous !== hash)) {
                   console.log('changed:', key);
                   const section = page.locator('[id=' + JSON.stringify(id) + ']').first();
                   await section.scrollIntoViewIfNeeded();
@@ -137,17 +140,18 @@ jobs:
                     continue;
                   }
                   const png = await section.screenshot({ type: 'png' });
-                  await sendPhoto(png, '网站板块资料更新\n' + key);
+                  await sendPhoto(png, (testMode ? '截图测试（资料已加载）\n' : '网站板块资料更新\n') + key);
                   await page.waitForTimeout(1200);
                 }
               }
             } catch (error) {
               console.error('site failed:', url, error.message);
             }
+            if (testMode) break;
           }
 
           await browser.close();
-          await writeFile('state.json', JSON.stringify(nextState, null, 2) + '\n');
+          if (!testMode) await writeFile('state.json', JSON.stringify(nextState, null, 2) + '\n');
           NODE
       - name: Save latest section baselines
         run: |
