@@ -114,7 +114,7 @@ jobs:
                 return r.width > 300 && r.height > 80 && text.includes('期号') && text.includes('开奖结果');
               }).map((el) => el.id).filter(Boolean));
               console.log('sections ' + ids.length + ':', url);
-              if (testMode && ids.length > 1) ids.splice(1);
+              if (false && testMode && ids.length > 1) ids.splice(1);
 
               const deadline = Date.now() + 30000;
               let pending = [...ids];
@@ -163,7 +163,7 @@ jobs:
             } catch (error) {
               console.error('site failed:', url, error.message);
             }
-            if (testMode) break;
+            if (false && testMode) break;
           }
 
           await browser.close();
