@@ -97,7 +97,14 @@ jobs:
             try {
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
               await page.waitForTimeout(4000);
+              const popupClose = page.getByRole('button', { name: /关闭|close/i }).first();
+              await popupClose.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+              if (await popupClose.isVisible().catch(() => false)) {
+                await popupClose.click({ force: true });
+                await page.waitForTimeout(2500);
+              }
               await removeObstructions();
+              await page.waitForTimeout(1000);
 
               const ids = await page.locator('[id]').evaluateAll((els) => els.filter((el) => {
                 const r = el.getBoundingClientRect();
@@ -118,7 +125,14 @@ jobs:
                 if (pending.length) await page.waitForTimeout(1500);
               }
 
+              const popupClose = page.getByRole('button', { name: /关闭|close/i }).first();
+              await popupClose.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+              if (await popupClose.isVisible().catch(() => false)) {
+                await popupClose.click({ force: true });
+                await page.waitForTimeout(2500);
+              }
               await removeObstructions();
+              await page.waitForTimeout(1000);
               for (const id of ids) {
                 const key = url + '#' + id;
                 let status;
