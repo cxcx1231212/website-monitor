@@ -39,7 +39,7 @@ jobs:
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const chatId = process.env.TELEGRAM_CHAT_ID;
           const manualRun = process.env.TEST_MODE === '1';
-          const testMode = false;
+          const testMode = manualRun;
           if (!token || !chatId) throw new Error('Telegram secrets are not configured');
           const now = new Date();
           if (manualRun || (now.getUTCHours() === 3 && now.getUTCMinutes() < 20)) {
@@ -122,7 +122,12 @@ jobs:
               const ids = await page.locator('[id]').evaluateAll((els) => els.filter((el) => {
                 const r = el.getBoundingClientRect();
                 const text = (el.innerText || '');
-                return r.width > 300 && r.height > 80 && text.includes('期号') && text.includes('开奖结果');
+                const heading = (el.querySelector('h1,h2,h3,h4,.title,.header,[class*=title],[class*=header]')?.textContent || text.slice(0, 120)).trim();
+                const expertWords = /高手|专家|预测|推荐|心水|精选|参考|解码|解读|论坛|资料|绝杀|必杀|平特一肖|六肖|特码|连肖|波色|尾数|生肖/;
+                const normalBoard = text.includes('期号') && text.includes('开奖结果');
+                const expertBoard = expertWords.test(heading) && /\d/.test(text);
+                const pureResult = /^(澳门|香港)?\s*开奖结果/.test(heading) && !expertWords.test(heading.replace(/开奖结果/g, ''));
+                return r.width > 300 && r.height > 80 && !pureResult && (normalBoard || expertBoard);
               }).map((el) => el.id).filter(Boolean));
               console.log('sections ' + ids.length + ':', url);
               if (false && testMode && ids.length > 1) ids.splice(1);
