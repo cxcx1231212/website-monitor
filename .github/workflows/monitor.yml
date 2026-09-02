@@ -11,7 +11,7 @@ permissions:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,11 +46,11 @@ jobs:
           for (const url of urls) {
             const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
             try {
-              await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
+              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               await page.waitForTimeout(3000);
               for (const selector of ['.close', '[class*=close]', '[aria-label=Close]', '[aria-label*=关闭]']) {
                 for (const item of await page.locator(selector).all()) {
-                  try { if (await item.isVisible()) await item.click({ timeout: 1000 }); } catch {}
+                  try { if (await item.isVisible()) await item.click({ timeout: 500 }); } catch {}
                 }
               }
               await page.locator('body').evaluate(body => {
@@ -69,11 +69,8 @@ jobs:
                 return candidates.filter(el => !candidates.some(other => other !== el && el.contains(other))).map(el => el.id);
               });
               console.log('sections ' + sectionIds.length + ': ' + url);
-              const idElements = await page.locator('[id]').all();
               for (const id of sectionIds) {
-                let section;
-                for (const item of idElements) { if ((await item.getAttribute('id')) === id) { section = item; break; } }
-                if (!section) continue;
+                const section = page.locator('[id=' + JSON.stringify(id) + ']').first();
                 const text = (await section.innerText()).replace(/\s+/g, ' ').trim();
                 const key = url + '#' + id;
                 const hash = createHash('sha256').update(text).digest('hex');
