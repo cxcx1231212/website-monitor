@@ -2,7 +2,7 @@ name: Daily website section monitor
 
 on:
   schedule:
-    - cron: '0,30 3-15 * * *'
+    - cron: '5,35 3-15 * * *'
   workflow_dispatch:
 
 permissions:
@@ -38,8 +38,19 @@ jobs:
           const nextState = { ...state };
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const chatId = process.env.TELEGRAM_CHAT_ID;
-          const testMode = process.env.TEST_MODE === '1';
+          const manualRun = process.env.TEST_MODE === '1';
+          const testMode = false;
           if (!token || !chatId) throw new Error('Telegram secrets are not configured');
+          const now = new Date();
+          if (manualRun || (now.getUTCHours() === 3 && now.getUTCMinutes() < 20)) {
+            const health = new FormData();
+            health.append('chat_id', chatId);
+            health.append('text', manualRun ? '网站资料监控已启动（手动检查）' : '网站资料监控已启动（北京时间 11:05）');
+            const healthRes = await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+              method: 'POST', body: health, signal: AbortSignal.timeout(20000)
+            });
+            if (!healthRes.ok) throw new Error('Telegram health message failed: ' + await healthRes.text());
+          }
 
           const browser = await chromium.launch({ headless: true });
           const page = await browser.newPage({ viewport: { width: 1280, height: 1600 }, deviceScaleFactor: 1 });
