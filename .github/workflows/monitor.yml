@@ -1,4 +1,4 @@
-name: Daily website monitor
+name: Daily website section monitor
 
 on:
   schedule:
@@ -19,7 +19,7 @@ jobs:
           node-version: 20
       - run: npm install playwright@1.55.0
       - run: npx playwright install --with-deps chromium
-      - name: Check websites and send changed pages
+      - name: Check each section and send its screenshot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -34,37 +34,69 @@ jobs:
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const chatId = process.env.TELEGRAM_CHAT_ID;
           if (!token || !chatId) throw new Error('Telegram secrets are not configured');
+          async function sendPhoto(image, caption) {
+            const form = new FormData();
+            form.set('chat_id', chatId);
+            form.set('caption', caption.slice(0, 1024));
+            form.set('photo', new Blob([image], { type: 'image/png' }), 'section.png');
+            const response = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form });
+            if (!response.ok) throw new Error('Telegram send failed: ' + response.status);
+          }
           const browser = await chromium.launch({ headless: true });
           for (const url of urls) {
             const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
             try {
               await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
               await page.waitForTimeout(3000);
-              const text = (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
-              const hash = createHash('sha256').update(text).digest('hex');
-              const oldHash = state[url];
-              state[url] = hash;
-              if (oldHash && oldHash !== hash) {
-                const image = await page.screenshot({ fullPage: true });
-                const form = new FormData();
-                form.set('chat_id', chatId);
-                form.set('caption', '网站资料已更新\n' + url);
-                form.set('photo', new Blob([image], { type: 'image/png' }), 'update.png');
-                const response = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', { method: 'POST', body: form });
-                if (!response.ok) throw new Error('Telegram send failed: ' + response.status);
+              for (const selector of ['.close', '[class*=close]', '[aria-label=Close]', '[aria-label*=关闭]']) {
+                for (const item of await page.locator(selector).all()) {
+                  try { if (await item.isVisible()) await item.click({ timeout: 1000 }); } catch {}
+                }
               }
-              console.log((oldHash ? (oldHash === hash ? 'unchanged' : 'changed') : 'baseline') + ': ' + url);
+              await page.locator('body').evaluate(body => {
+                for (const el of body.querySelectorAll('*')) {
+                  const style = getComputedStyle(el);
+                  const rect = el.getBoundingClientRect();
+                  if (style.position === 'fixed' && Number(style.zIndex || 0) > 99 && rect.width > innerWidth * 0.35 && rect.height > innerHeight * 0.2) el.remove();
+                }
+              });
+              const sectionIds = await page.locator('[id]').evaluateAll(elements => {
+                const candidates = elements.filter(el => {
+                  const rect = el.getBoundingClientRect();
+                  const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+                  return el.id && rect.width > 300 && rect.height > 80 && text.includes('期号') && text.includes('开奖结果');
+                });
+                return candidates.filter(el => !candidates.some(other => other !== el && el.contains(other))).map(el => el.id);
+              });
+              console.log('sections ' + sectionIds.length + ': ' + url);
+              const idElements = await page.locator('[id]').all();
+              for (const id of sectionIds) {
+                let section;
+                for (const item of idElements) { if ((await item.getAttribute('id')) === id) { section = item; break; } }
+                if (!section) continue;
+                const text = (await section.innerText()).replace(/\s+/g, ' ').trim();
+                const key = url + '#' + id;
+                const hash = createHash('sha256').update(text).digest('hex');
+                const oldHash = state[key];
+                state[key] = hash;
+                if (oldHash && oldHash !== hash) {
+                  await section.scrollIntoViewIfNeeded();
+                  const image = await section.screenshot();
+                  await sendPhoto(image, '网站资料板块已更新\n' + text.slice(0, 80) + '\n' + url);
+                }
+                console.log((oldHash ? (oldHash === hash ? 'unchanged' : 'changed') : 'baseline') + ': ' + key);
+              }
             } catch (error) { console.error('failed: ' + url, error); }
             finally { await page.close(); }
           }
           await browser.close();
           await writeFile('state.json', JSON.stringify(state, null, 2) + '\n');
           NODE
-      - name: Save latest baseline
+      - name: Save latest section baselines
         run: |
           if git diff --quiet -- state.json && git ls-files --error-unmatch state.json >/dev/null 2>&1; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add state.json
-          git commit -m 'Update website baseline [skip ci]'
+          git commit -m 'Update section baselines [skip ci]'
           git push
