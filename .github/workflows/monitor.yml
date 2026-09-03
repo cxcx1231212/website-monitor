@@ -237,6 +237,7 @@ jobs:
                   if (stable >= 2) { detailText = info.text; break; }
                   await page.waitForTimeout(1000);
                 }
+                result.url = page.url();
                 if (!detailText) throw new Error('Detail not ready or name/issue does not match list');
                 await page.evaluate(() => document.fonts.ready);
                 await removeObstructions();
@@ -246,6 +247,9 @@ jobs:
                 if (!manualRun && !changed) continue;
                 // Keep the latest three complete issue groups on detail pages.
                 await target.evaluate(el => {
+                  el.style.setProperty('min-height','0','important');
+                  el.style.setProperty('height','auto','important');
+                  for (const ad of el.querySelectorAll('.banner-ad,[data-ad-position]')) ad.style.setProperty('display','none','important');
                   const rows = [...el.querySelectorAll('.history-row,.triple-detail-row')];
                   const periods = [...new Set(rows.map(r=>r.innerText.match(/(\d+)\s*期/)?.[1]).filter(Boolean))].sort((a,b)=>Number(b)-Number(a));
                   if (periods.length > 3) for (const row of rows) {
@@ -258,13 +262,14 @@ jobs:
                 // Long HTML details are split rather than shrunk into unreadable strips.
                 const fileBase = String(++artifactNo).padStart(3, '0') + '-' + new URL(source).hostname;
                 const pieces = Math.ceil(bounds.height / 1400);
+                const pieceHeight = Math.ceil(bounds.height / pieces);
                 for (let part = 0; part < pieces; part++) {
                   let png;
                   if (pieces === 1) png = await target.screenshot({ type: 'png' });
                   else {
                     await page.evaluate(()=>window.scrollTo(0,0));
                     const box = await target.boundingBox();
-                    png = await page.screenshot({ type:'png', clip:{ x:box.x, y:box.y+part*1400, width:box.width, height:Math.min(1400,box.height-part*1400) }, fullPage:true });
+                    png = await page.screenshot({ type:'png', clip:{ x:box.x, y:box.y+part*pieceHeight, width:box.width, height:Math.min(pieceHeight,box.height-part*pieceHeight) }, fullPage:true });
                   }
                   await writeFile('screenshots/' + fileBase + '-' + (part+1) + '.png', png);
                   if (!dryRun) {
@@ -275,6 +280,7 @@ jobs:
                 result.status = dryRun ? 'preview-ready' : 'sent';
                 if (!dryRun && !manualRun) nextState[key] = hash;
               } catch (error) {
+                result.status = 'failed';
                 result.error = error.message;
                 console.error('expert failed:', source, entry.text, error.message);
               }
@@ -297,7 +303,7 @@ jobs:
               await page.waitForTimeout(1000);
 
               const ids = expertsOnly ? [] : await page.locator('[id]').evaluateAll((els) => els.filter((el) => {
-                if (el.matches('#gaoshou,#masters,#expertGrid') || el.querySelector('#gaoshou,#masters,#expertGrid,.material.title-only[role=link]')) return false;
+                if (el.closest('#gaoshou,#masters,#expertGrid,.master-section,.recommend-panel') || el.querySelector('#gaoshou,#masters,#expertGrid,.material.title-only[role=link]')) return false;
                 const r = el.getBoundingClientRect();
                 const text = (el.innerText || '');
                 const heading = (el.querySelector('h1,h2,h3,h4,.title,.header,[class*=title],[class*=header]')?.textContent || text.slice(0, 120)).trim();
