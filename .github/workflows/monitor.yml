@@ -155,6 +155,9 @@ jobs:
           let artifactNo = 0;
           await mkdir('screenshots', { recursive: true });
           const captureExperts = async (source) => {
+            if (await page.locator('#gaoshou,#masters,#expertGrid').count()) {
+              await page.locator(expertSelector).first().waitFor({state:'visible',timeout:35000});
+            }
             const entries = [];
             const seen = new Set();
             // Include every page of the expert grid, not only its first eight entries.
@@ -181,6 +184,7 @@ jobs:
               await page.waitForFunction(previous => [...document.querySelectorAll('#expertGrid a')].map(e=>e.getAttribute('href')).join('|') !== previous, old, { timeout: 10000 });
             }
             const total = entries.length;
+            report.push({source,status:'coverage',entries:total,attempted:detailLimit>0?Math.min(total,detailLimit):total});
             console.log('expert entries:', source, total);
             if (detailLimit > 0) entries.splice(detailLimit);
             for (const entry of entries) {
@@ -260,7 +264,7 @@ jobs:
                   else {
                     await page.evaluate(()=>window.scrollTo(0,0));
                     const box = await target.boundingBox();
-                    png = await page.screenshot({ type:'png', clip:{ x:box.x, y:box.y+part*1400, width:box.width, height:Math.min(1400,box.height-part*1400) }, captureBeyondViewport:true });
+                    png = await page.screenshot({ type:'png', clip:{ x:box.x, y:box.y+part*1400, width:box.width, height:Math.min(1400,box.height-part*1400) }, fullPage:true });
                   }
                   await writeFile('screenshots/' + fileBase + '-' + (part+1) + '.png', png);
                   if (!dryRun) {
