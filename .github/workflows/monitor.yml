@@ -4,7 +4,8 @@ on:
   schedule:
     # Beijing 11:00 start, then 11:05-23:35 half-hour checks (UTC).
     - cron: '0 3 * * *'
-    - cron: '5,35 3-15 * * *'
+    # Every two hours after the Beijing 11:00 start; avoids exhausting Actions minutes.
+    - cron: '5 5,7,9,11,13,15 * * *'
   workflow_dispatch:
     inputs:
       notification_test:
@@ -34,7 +35,7 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -172,6 +173,7 @@ jobs:
           let artifactNo = 0;
           await mkdir('screenshots', { recursive: true });
           const captureExperts = async (source) => {
+            const siteDeadline = Date.now() + 10 * 60 * 1000;
             if (await page.locator('#gaoshou,#masters,#expertGrid').count()) {
               await page.locator(expertSelector).first().waitFor({state:'visible',timeout:35000});
             }
@@ -201,13 +203,34 @@ jobs:
               await page.waitForFunction(previous => [...document.querySelectorAll('#expertGrid a')].map(e=>e.getAttribute('href')).join('|') !== previous, old, { timeout: 10000 });
             }
             const total = entries.length;
+            const listedPeriods = entries.map(x=>x.period).filter(Boolean);
+            if (listedPeriods.length && Math.max(...listedPeriods) < 200) {
+              report.push({source,status:'site-failed',error:'Expert list period is malformed; skipped to save runtime'});
+              console.log('skip malformed expert periods:', source);
+              return;
+            }
             report.push({source,status:'coverage',entries:total,attempted:detailLimit>0?Math.min(total,detailLimit):total});
             console.log('expert entries:', source, total);
             if (detailLimit > 0) entries.splice(detailLimit);
             for (const entry of entries) {
+              if (Date.now() >= siteDeadline) {
+                report.push({source,status:'site-failed',error:'Expert site time budget reached; remaining entries deferred'});
+                break;
+              }
               const result = { source, entry: entry.text, status: 'failed' };
               report.push(result);
               const key = source + '#expert:' + entry.identity;
+              const periodKey = key + '#period';
+              if (!manualRun && entry.period && state[periodKey] === entry.period) {
+                result.status = 'unchanged-period';
+                continue;
+              }
+              // Migrate details successfully sent before period tracking was added without resending them.
+              if (!manualRun && entry.period && state[key] && state[periodKey] == null) {
+                nextState[periodKey] = entry.period;
+                result.status = 'baseline-period';
+                continue;
+              }
               try {
                 if (entry.destination) {
                   const destination = new URL(entry.destination, source);
@@ -295,7 +318,10 @@ jobs:
                   }
                 }
                 result.status = dryRun ? 'preview-ready' : 'sent';
-                if (!dryRun && !manualRun) nextState[key] = hash;
+                if (!dryRun && !manualRun) {
+                  nextState[key] = hash;
+                  if (entry.period) nextState[periodKey] = entry.period;
+                }
               } catch (error) {
                 result.status = 'failed';
                 result.error = error.message;
